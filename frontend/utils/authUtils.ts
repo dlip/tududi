@@ -33,7 +33,15 @@ export const handleAuthResponse = async (
 ): Promise<Response> => {
     if (!response.ok) {
         if (response.status === 401) {
-            if (window.location.pathname !== '/login' && !isRedirecting) {
+            // When offline, don't hard-redirect to /login: there's no live
+            // session check possible and the cached shell should remain usable.
+            const offline =
+                typeof navigator !== 'undefined' && navigator.onLine === false;
+            if (
+                !offline &&
+                window.location.pathname !== '/login' &&
+                !isRedirecting
+            ) {
                 isRedirecting = true;
                 setTimeout(() => {
                     window.location.href = '/login';

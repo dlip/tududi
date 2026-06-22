@@ -43,8 +43,12 @@ const tagsController = {
      */
     async create(req, res, next) {
         try {
-            const { name } = req.body;
-            const tag = await tagsService.create(req.currentUser.id, name);
+            const { name, uid } = req.body;
+            const tag = await tagsService.create(
+                req.currentUser.id,
+                name,
+                uid
+            );
             res.status(201).json(tag);
         } catch (error) {
             next(error);

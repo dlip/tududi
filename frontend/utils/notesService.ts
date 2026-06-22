@@ -2,27 +2,38 @@ import { Note } from '../entities/Note';
 import {
     handleAuthResponse,
     getDefaultHeaders,
-    getPostHeadersWithCsrf,
 } from './authUtils';
 import { getApiPath } from '../config/paths';
+import { offlineMutate, cacheReadCollection } from '../offline/offlineFetch';
+import { getAll as getCachedCollection } from '../offline/db';
+import { generateClientUid } from '../offline/clientUid';
 
 export const fetchNotes = async (): Promise<Note[]> => {
-    const response = await fetch(getApiPath('notes'), {
-        credentials: 'include',
-        headers: {
-            ...getDefaultHeaders(),
-            'Cache-Control': 'no-cache',
-        },
-        cache: 'no-store',
-    });
-    await handleAuthResponse(response, 'Failed to fetch notes.');
+    try {
+        const response = await fetch(getApiPath('notes'), {
+            credentials: 'include',
+            headers: {
+                ...getDefaultHeaders(),
+                'Cache-Control': 'no-cache',
+            },
+            cache: 'no-store',
+        });
+        await handleAuthResponse(response, 'Failed to fetch notes.');
 
-    return await response.json();
+        const notes: Note[] = await response.json();
+        void cacheReadCollection('notes', async () => notes);
+        return notes;
+    } catch (error) {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            return getCachedCollection<Note>('notes').catch(() => []);
+        }
+        throw error;
+    }
 };
 
 export const createNote = async (noteData: Note): Promise<Note> => {
     // Transform project_id to project_uid if needed (same as updateNote)
-    const requestData = { ...noteData };
+    const requestData: any = { ...noteData };
     if (noteData.project && noteData.project.uid) {
         requestData.project_uid = noteData.project.uid;
     } else if (noteData.project_uid) {
@@ -35,15 +46,24 @@ export const createNote = async (noteData: Note): Promise<Note> => {
         );
     }
 
-    const response = await fetch(getApiPath('note'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: await getPostHeadersWithCsrf(),
-        body: JSON.stringify(requestData),
-    });
+    const uid = requestData.uid || generateClientUid();
+    requestData.uid = uid;
+    const now = new Date().toISOString();
 
-    await handleAuthResponse(response, 'Failed to create note.');
-    return await response.json();
+    return offlineMutate<Note>({
+        entity: 'notes',
+        op: 'create',
+        uid,
+        method: 'POST',
+        apiPath: getApiPath('note'),
+        payload: requestData,
+        optimisticResult: {
+            ...requestData,
+            created_at: now,
+            updated_at: now,
+        } as Note,
+        errorMessage: 'Failed to create note.',
+    });
 };
 
 export const updateNote = async (
@@ -51,7 +71,7 @@ export const updateNote = async (
     noteData: Note
 ): Promise<Note> => {
     // Transform project_id to project_uid if needed
-    const requestData = { ...noteData };
+    const requestData: any = { ...noteData };
     if (noteData.project && noteData.project.uid) {
         requestData.project_uid = noteData.project.uid;
     } else if (noteData.project_uid) {
@@ -64,28 +84,32 @@ export const updateNote = async (
         );
     }
 
-    // Use the provided noteUid
-    const noteIdentifier = noteUid;
-
-    const response = await fetch(getApiPath(`note/${noteIdentifier}`), {
+    return offlineMutate<Note>({
+        entity: 'notes',
+        op: 'update',
+        uid: noteUid,
         method: 'PATCH',
-        credentials: 'include',
-        headers: await getPostHeadersWithCsrf(),
-        body: JSON.stringify(requestData),
+        apiPath: getApiPath(`note/${noteUid}`),
+        payload: requestData,
+        optimisticResult: {
+            ...requestData,
+            uid: noteUid,
+            updated_at: new Date().toISOString(),
+        } as Note,
+        errorMessage: 'Failed to update note.',
     });
-
-    await handleAuthResponse(response, 'Failed to update note.');
-    return await response.json();
 };
 
 export const deleteNote = async (noteUid: string): Promise<void> => {
-    const response = await fetch(getApiPath(`note/${noteUid}`), {
+    await offlineMutate<void>({
+        entity: 'notes',
+        op: 'delete',
+        uid: noteUid,
         method: 'DELETE',
-        credentials: 'include',
-        headers: await getPostHeadersWithCsrf(),
+        apiPath: getApiPath(`note/${noteUid}`),
+        optimisticResult: undefined,
+        errorMessage: 'Failed to delete note.',
     });
-
-    await handleAuthResponse(response, 'Failed to delete note.');
 };
 
 export const fetchNoteBySlug = async (uidSlug: string): Promise<Note> => {

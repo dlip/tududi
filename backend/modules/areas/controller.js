@@ -55,11 +55,12 @@ const areasController = {
     async create(req, res, next) {
         try {
             const userId = requireUserId(req);
-            const { name, description, color } = req.body;
+            const { name, description, color, uid } = req.body;
             const area = await areasService.create(userId, {
                 name,
                 description,
                 color,
+                uid,
             });
             res.status(201).json(area);
         } catch (error) {

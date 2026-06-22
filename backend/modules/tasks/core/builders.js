@@ -1,5 +1,6 @@
 const { Task } = require('../../../models');
 const { parsePriority, parseStatus } = require('./parsers');
+const { isValidUid } = require('../../../utils/uid');
 const {
     processDueDateForStorage,
     processDeferUntilForStorage,
@@ -168,6 +169,11 @@ function buildTaskAttributes(body, userId, timezone, isUpdate = false) {
 
     if (!isUpdate) {
         attrs.user_id = userId;
+        // Accept a client-generated uid (offline-created tasks) so the id is
+        // stable across the offline queue → server replay round-trip.
+        if (isValidUid(body.uid)) {
+            attrs.uid = body.uid;
+        }
     }
 
     return attrs;

@@ -1,7 +1,9 @@
 import { Project } from '../entities/Project';
 import { handleAuthResponse } from './authUtils';
 import { getApiPath } from '../config/paths';
-import { getCsrfToken } from './csrfService';
+import { offlineMutate, cacheReadCollection } from '../offline/offlineFetch';
+import { getAll as getCachedCollection } from '../offline/db';
+import { generateClientUid } from '../offline/clientUid';
 
 export const fetchProjects = async (
     stateFilter = 'all',
@@ -14,15 +16,24 @@ export const fetchProjects = async (
     if (areaFilter) params.append('area', areaFilter);
     if (params.toString()) url += `?${params.toString()}`;
 
-    const response = await fetch(getApiPath(url), {
-        credentials: 'include',
-        headers: { Accept: 'application/json' },
-    });
+    try {
+        const response = await fetch(getApiPath(url), {
+            credentials: 'include',
+            headers: { Accept: 'application/json' },
+        });
 
-    await handleAuthResponse(response, 'Failed to fetch projects.');
+        await handleAuthResponse(response, 'Failed to fetch projects.');
 
-    const data = await response.json();
-    return data.projects || data;
+        const data = await response.json();
+        const projects: Project[] = data.projects || data;
+        void cacheReadCollection('projects', async () => projects);
+        return projects;
+    } catch (error) {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            return getCachedCollection<Project>('projects').catch(() => []);
+        }
+        throw error;
+    }
 };
 
 export const fetchGroupedProjects = async (
@@ -61,40 +72,44 @@ export const fetchProjectById = async (projectId: string): Promise<Project> => {
 export const createProject = async (
     projectData: Partial<Project>
 ): Promise<Project> => {
-    const token = await getCsrfToken();
-    const response = await fetch(getApiPath('project'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'x-csrf-token': token,
-        },
-        body: JSON.stringify(projectData),
-    });
+    const uid = (projectData as any).uid || generateClientUid();
+    const payload = { ...projectData, uid };
+    const now = new Date().toISOString();
 
-    await handleAuthResponse(response, 'Failed to create project.');
-    return await response.json();
+    return offlineMutate<Project>({
+        entity: 'projects',
+        op: 'create',
+        uid,
+        method: 'POST',
+        apiPath: getApiPath('project'),
+        payload,
+        optimisticResult: {
+            ...payload,
+            created_at: now,
+            updated_at: now,
+        } as Project,
+        errorMessage: 'Failed to create project.',
+    });
 };
 
 export const updateProject = async (
     projectUid: string,
     projectData: Partial<Project>
 ): Promise<Project> => {
-    const token = await getCsrfToken();
-    const response = await fetch(getApiPath(`project/${projectUid}`), {
+    return offlineMutate<Project>({
+        entity: 'projects',
+        op: 'update',
+        uid: projectUid,
         method: 'PATCH',
-        credentials: 'include',
-        headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'x-csrf-token': token,
-        },
-        body: JSON.stringify(projectData),
+        apiPath: getApiPath(`project/${projectUid}`),
+        payload: projectData,
+        optimisticResult: {
+            ...projectData,
+            uid: projectUid,
+            updated_at: new Date().toISOString(),
+        } as Project,
+        errorMessage: 'Failed to update project.',
     });
-
-    await handleAuthResponse(response, 'Failed to update project.');
-    return await response.json();
 };
 
 export const deleteProject = async (projectUid: string): Promise<void> => {
@@ -102,29 +117,15 @@ export const deleteProject = async (projectUid: string): Promise<void> => {
         throw new Error('Cannot delete project: Invalid project UID');
     }
 
-    console.log('Attempting to delete project with UID:', projectUid);
-
-    const token = await getCsrfToken();
-    const response = await fetch(getApiPath(`project/${projectUid}`), {
+    await offlineMutate<void>({
+        entity: 'projects',
+        op: 'delete',
+        uid: projectUid,
         method: 'DELETE',
-        credentials: 'include',
-        headers: {
-            Accept: 'application/json',
-            'x-csrf-token': token,
-        },
+        apiPath: getApiPath(`project/${projectUid}`),
+        optimisticResult: undefined,
+        errorMessage: 'Failed to delete project.',
     });
-
-    console.log('Delete response status:', response.status);
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Delete failed with response:', errorText);
-        throw new Error(
-            `Failed to delete project: ${response.status} - ${errorText}`
-        );
-    }
-
-    await handleAuthResponse(response, 'Failed to delete project.');
 };
 
 export const fetchProjectBySlug = async (uidSlug: string): Promise<Project> => {

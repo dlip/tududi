@@ -2,6 +2,7 @@
 
 const tagsRepository = require('./repository');
 const { validateTagName } = require('./validation');
+const { isValidUid } = require('../../utils/uid');
 const {
     NotFoundError,
     ConflictError,
@@ -55,7 +56,7 @@ class TagsService {
     /**
      * Create a new tag.
      */
-    async create(userId, name) {
+    async create(userId, name, uid) {
         const validatedName = validateTagName(name);
 
         const exists = await tagsRepository.nameExists(userId, validatedName);
@@ -65,7 +66,11 @@ class TagsService {
             );
         }
 
-        const tag = await tagsRepository.createForUser(userId, validatedName);
+        const tag = await tagsRepository.createForUser(
+            userId,
+            validatedName,
+            isValidUid(uid) ? uid : undefined
+        );
 
         return {
             uid: tag.uid,

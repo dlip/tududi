@@ -50,8 +50,9 @@ class AreasRepository extends BaseRepository {
     /**
      * Create a new area for a user.
      */
-    async createForUser(userId, { name, description, color }) {
+    async createForUser(userId, { name, description, color, uid }) {
         return this.model.create({
+            ...(uid ? { uid } : {}),
             name,
             description: description || '',
             color: color || null,
