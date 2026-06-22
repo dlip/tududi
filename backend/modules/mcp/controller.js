@@ -94,8 +94,39 @@ async function listMcpTools(req, res) {
         },
         {
             category: 'Projects',
-            count: 3,
-            tools: ['list_projects', 'create_project', 'update_project'],
+            count: 4,
+            tools: [
+                'list_projects',
+                'create_project',
+                'update_project',
+                'delete_project',
+            ],
+        },
+        {
+            category: 'Areas',
+            count: 5,
+            tools: [
+                'list_areas',
+                'get_area',
+                'create_area',
+                'update_area',
+                'delete_area',
+            ],
+        },
+        {
+            category: 'Habits',
+            count: 9,
+            tools: [
+                'list_habits',
+                'get_habit',
+                'create_habit',
+                'update_habit',
+                'delete_habit',
+                'log_habit_completion',
+                'get_habit_completions',
+                'delete_habit_completion',
+                'get_habit_stats',
+            ],
         },
         {
             category: 'Inbox',
@@ -104,8 +135,8 @@ async function listMcpTools(req, res) {
         },
         {
             category: 'Misc',
-            count: 3,
-            tools: ['list_areas', 'list_tags', 'search'],
+            count: 2,
+            tools: ['list_tags', 'search'],
         },
     ];
 

@@ -1,53 +1,13 @@
 'use strict';
 
-const { Area, Tag, Task, Project, Note } = require('../../../models');
+const { Tag, Task, Project, Note } = require('../../../models');
 const { Op } = require('sequelize');
 
 /**
  * Register miscellaneous MCP tools
  */
 function registerMiscTools(server, context, tools) {
-    // 1. list_areas - List all areas
-    tools.push({
-        name: 'list_areas',
-        description: 'List all organizational areas',
-        inputSchema: {
-            type: 'object',
-            properties: {},
-        },
-        handler: async (params) => {
-            const areas = await Area.findAll({
-                where: { user_id: context.userId },
-                order: [['name', 'ASC']],
-            });
-
-            const serialized = areas.map((area) => ({
-                id: area.id,
-                uid: area.uid,
-                name: area.name,
-                description: area.description,
-                created_at: area.created_at,
-            }));
-
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: JSON.stringify(
-                            {
-                                count: serialized.length,
-                                areas: serialized,
-                            },
-                            null,
-                            2
-                        ),
-                    },
-                ],
-            };
-        },
-    });
-
-    // 2. list_tags - List all tags
+    // 1. list_tags - List all tags
     tools.push({
         name: 'list_tags',
         description: 'List all available tags',
