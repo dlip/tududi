@@ -2,6 +2,7 @@
 
 const { Project, Area, Tag } = require('../../../models');
 const { Op } = require('sequelize');
+const projectsRepository = require('../../projects/repository');
 
 /**
  * Register all project-related MCP tools
@@ -141,6 +142,11 @@ function registerProjectTools(server, context, tools) {
                     items: { type: 'string' },
                     description: 'Array of tag names',
                 },
+                image_url: {
+                    type: 'string',
+                    description:
+                        'Image URL (upload via POST /api/upload/project-image first)',
+                },
             },
             required: ['name'],
         },
@@ -153,6 +159,7 @@ function registerProjectTools(server, context, tools) {
                 status: params.status || 'not_started',
                 area_id: params.area_id || null,
                 due_date_at: params.due_date_at || null,
+                image_url: params.image_url || null,
             };
 
             const project = await Project.create(projectData);
@@ -250,6 +257,11 @@ function registerProjectTools(server, context, tools) {
                     type: 'boolean',
                     description: 'Pin to sidebar',
                 },
+                image_url: {
+                    type: 'string',
+                    description:
+                        'Image URL (upload via POST /api/upload/project-image first)',
+                },
             },
             required: ['uid'],
         },
@@ -272,6 +284,9 @@ function registerProjectTools(server, context, tools) {
             if (params.area_id !== undefined) updates.area_id = params.area_id;
             if (params.pinned !== undefined)
                 updates.pin_to_sidebar = params.pinned;
+            if (params.image_url !== undefined)
+                updates.image_url =
+                    params.image_url === '' ? null : params.image_url;
 
             await project.update(updates);
 
@@ -308,6 +323,50 @@ function registerProjectTools(server, context, tools) {
                                 message: 'Project updated successfully',
                                 project: serialized,
                             },
+                            null,
+                            2
+                        ),
+                    },
+                ],
+            };
+        },
+    });
+
+    // 4. delete_project - Delete a project
+    tools.push({
+        name: 'delete_project',
+        description:
+            'Delete a project and all its tasks (notes are orphaned)',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                uid: {
+                    type: 'string',
+                    description: 'Project UID',
+                },
+            },
+            required: ['uid'],
+        },
+        handler: async (params) => {
+            const project = await Project.findOne({
+                where: { uid: params.uid, user_id: context.userId },
+            });
+
+            if (!project) {
+                throw new Error(`Project not found: ${params.uid}`);
+            }
+
+            await projectsRepository.deleteWithOrphaning(
+                project,
+                context.userId
+            );
+
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify(
+                            { message: 'Project deleted successfully' },
                             null,
                             2
                         ),
