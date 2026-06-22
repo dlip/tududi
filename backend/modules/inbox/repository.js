@@ -79,8 +79,9 @@ class InboxRepository extends BaseRepository {
     /**
      * Create a new inbox item for a user.
      */
-    async createForUser(userId, { content, title, source }) {
+    async createForUser(userId, { content, title, source, uid }) {
         return this.model.create({
+            ...(uid ? { uid } : {}),
             content,
             title,
             source,

@@ -31,6 +31,8 @@ import EisenhowerMatrix from './components/Eisenhower/EisenhowerMatrix';
 import { setCurrentUser as setUserInStorage } from './utils/userUtils';
 import { getApiPath, getLocalesPath } from './config/paths';
 import { useStore } from './store/useStore';
+import { startConnectivityWatch } from './offline/connectivity';
+import { flush } from './offline/outbox';
 // Lazy load Tasks component to prevent issues with tags loading
 const Tasks = lazy(() => import('./components/Tasks'));
 
@@ -67,6 +69,12 @@ const App: React.FC = () => {
                 useStore.getState().userSettingsStore.setEisenhowerEnabled(
                     data.user.features?.eisenhower_enabled === true
                 );
+                // Replay any queued offline mutations now that we have an
+                // authenticated session, and flush again on every reconnect.
+                startConnectivityWatch(() => {
+                    void flush();
+                });
+                void flush();
             } else {
                 setCurrentUser(null);
                 setUserInStorage(null);

@@ -11,7 +11,7 @@ const {
     getSafeTimezone,
     processDueDateForResponse,
 } = require('../../utils/timezone-utils');
-const { uid: generateUid } = require('../../utils/uid');
+const { uid: generateUid, isValidUid } = require('../../utils/uid');
 const { extractUidFromSlug } = require('../../utils/slug-utils');
 const { logError } = require('../../services/logService');
 
@@ -269,7 +269,8 @@ class ProjectsService {
 
         const validatedName = validateName(name);
         const tagsData = tags || Tags;
-        const projectUid = generateUid();
+        const projectUid =
+            isValidUid(data.uid) ? data.uid : generateUid();
 
         const projectData = {
             uid: projectUid,

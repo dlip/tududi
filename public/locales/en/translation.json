@@ -1,4 +1,10 @@
 {
+  "offline": {
+    "offline": "Offline",
+    "offlinePending": "Offline – {{count}} change(s) queued",
+    "syncing": "Syncing {{count}} change(s)…",
+    "syncConflict": "A change to {{entity}} could not be synced and was discarded."
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",

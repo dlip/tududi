@@ -65,8 +65,9 @@ class TagsRepository extends BaseRepository {
     /**
      * Create a new tag for a user.
      */
-    async createForUser(userId, name) {
+    async createForUser(userId, name, uid) {
         return this.model.create({
+            ...(uid ? { uid } : {}),
             name,
             user_id: userId,
         });

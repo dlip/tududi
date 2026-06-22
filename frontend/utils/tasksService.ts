@@ -3,10 +3,16 @@ import { Task } from '../entities/Task';
 import {
     handleAuthResponse,
     getDefaultHeaders,
-    getPostHeadersWithCsrf,
 } from './authUtils';
 import { getApiPath } from '../config/paths';
 import { isTaskDone, TASK_STATUS } from '../constants/taskStatus';
+import {
+    offlineMutate,
+    cacheReadCollection,
+    cacheReadOne,
+} from '../offline/offlineFetch';
+import { getAll as getCachedCollection } from '../offline/db';
+import { generateClientUid } from '../offline/clientUid';
 
 export interface GroupedTasks {
     [groupName: string]: Task[];
@@ -38,54 +44,83 @@ export const fetchTasks = async (
             ? `${query}${query.includes('?') ? '&' : '?'}include_lists=true`
             : query;
 
-    // Fetch tasks and metrics in parallel for better performance
-    const [tasksResponse, metricsResponse] = await Promise.all([
-        fetch(getApiPath(`tasks${tasksQuery}`), {
-            credentials: 'include',
-            headers: getDefaultHeaders(),
-        }),
-        fetch(getApiPath('tasks/metrics'), {
-            credentials: 'include',
-            headers: getDefaultHeaders(),
-        }),
-    ]);
+    try {
+        // Fetch tasks and metrics in parallel for better performance
+        const [tasksResponse, metricsResponse] = await Promise.all([
+            fetch(getApiPath(`tasks${tasksQuery}`), {
+                credentials: 'include',
+                headers: getDefaultHeaders(),
+            }),
+            fetch(getApiPath('tasks/metrics'), {
+                credentials: 'include',
+                headers: getDefaultHeaders(),
+            }),
+        ]);
 
-    await handleAuthResponse(tasksResponse, 'Failed to fetch tasks.');
-    await handleAuthResponse(metricsResponse, 'Failed to fetch metrics.');
+        await handleAuthResponse(tasksResponse, 'Failed to fetch tasks.');
+        await handleAuthResponse(metricsResponse, 'Failed to fetch metrics.');
 
-    const tasksResult = await tasksResponse.json();
-    const metrics = await metricsResponse.json();
+        const tasksResult = await tasksResponse.json();
+        const metrics = await metricsResponse.json();
 
-    if (!Array.isArray(tasksResult.tasks)) {
-        throw new Error('Resulting tasks are not an array.');
+        if (!Array.isArray(tasksResult.tasks)) {
+            throw new Error('Resulting tasks are not an array.');
+        }
+
+        // Write-through to the offline cache so tasks are available offline.
+        void cacheReadCollection('tasks', async () => tasksResult.tasks);
+
+        return {
+            tasks: tasksResult.tasks,
+            metrics: metrics,
+            groupedTasks: tasksResult.groupedTasks,
+            // Dashboard task lists (only present when include_lists=true)
+            tasks_in_progress: tasksResult.tasks_in_progress,
+            tasks_today_plan: tasksResult.tasks_today_plan,
+            tasks_due_today: tasksResult.tasks_due_today,
+            tasks_overdue: tasksResult.tasks_overdue,
+            suggested_tasks: tasksResult.suggested_tasks,
+            tasks_completed_today: tasksResult.tasks_completed_today,
+            // Pagination metadata
+            pagination: tasksResult.pagination,
+        };
+    } catch (error) {
+        // Offline fallback: serve the last-known cached tasks.
+        if (
+            typeof navigator !== 'undefined' &&
+            navigator.onLine === false
+        ) {
+            const cachedTasks = await getCachedCollection<Task>('tasks').catch(
+                () => [] as Task[]
+            );
+            return {
+                tasks: cachedTasks,
+                metrics: {} as Metrics,
+            };
+        }
+        throw error;
     }
-
-    return {
-        tasks: tasksResult.tasks,
-        metrics: metrics,
-        groupedTasks: tasksResult.groupedTasks,
-        // Dashboard task lists (only present when include_lists=true)
-        tasks_in_progress: tasksResult.tasks_in_progress,
-        tasks_today_plan: tasksResult.tasks_today_plan,
-        tasks_due_today: tasksResult.tasks_due_today,
-        tasks_overdue: tasksResult.tasks_overdue,
-        suggested_tasks: tasksResult.suggested_tasks,
-        tasks_completed_today: tasksResult.tasks_completed_today,
-        // Pagination metadata
-        pagination: tasksResult.pagination,
-    };
 };
 
 export const createTask = async (taskData: Task): Promise<Task> => {
-    const response = await fetch(getApiPath('task'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: await getPostHeadersWithCsrf(),
-        body: JSON.stringify(taskData),
-    });
+    const uid = (taskData as any).uid || generateClientUid();
+    const payload = { ...taskData, uid };
+    const now = new Date().toISOString();
 
-    await handleAuthResponse(response, 'Failed to create task.');
-    return await response.json();
+    return offlineMutate<Task>({
+        entity: 'tasks',
+        op: 'create',
+        uid,
+        method: 'POST',
+        apiPath: getApiPath('task'),
+        payload,
+        optimisticResult: {
+            ...payload,
+            created_at: now,
+            updated_at: now,
+        } as Task,
+        errorMessage: 'Failed to create task.',
+    });
 };
 
 export const updateTask = async (
@@ -99,18 +134,20 @@ export const updateTask = async (
         payload.name = payload.original_name;
     }
 
-    const response = await fetch(
-        getApiPath(`task/${encodeURIComponent(taskUid)}`),
-        {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: await getPostHeadersWithCsrf(),
-            body: JSON.stringify(payload),
-        }
-    );
-
-    await handleAuthResponse(response, 'Failed to update task.');
-    return await response.json();
+    return offlineMutate<Task>({
+        entity: 'tasks',
+        op: 'update',
+        uid: taskUid,
+        method: 'PATCH',
+        apiPath: getApiPath(`task/${encodeURIComponent(taskUid)}`),
+        payload,
+        optimisticResult: {
+            ...payload,
+            uid: taskUid,
+            updated_at: new Date().toISOString(),
+        } as Task,
+        errorMessage: 'Failed to update task.',
+    });
 };
 
 export const toggleTaskCompletion = async (
@@ -155,16 +192,15 @@ export const toggleTaskCompletion = async (
 };
 
 export const deleteTask = async (taskUid: string): Promise<void> => {
-    const response = await fetch(
-        getApiPath(`task/${encodeURIComponent(taskUid)}`),
-        {
-            method: 'DELETE',
-            credentials: 'include',
-            headers: await getPostHeadersWithCsrf(),
-        }
-    );
-
-    await handleAuthResponse(response, 'Failed to delete task.');
+    await offlineMutate<void>({
+        entity: 'tasks',
+        op: 'delete',
+        uid: taskUid,
+        method: 'DELETE',
+        apiPath: getApiPath(`task/${encodeURIComponent(taskUid)}`),
+        optimisticResult: undefined,
+        errorMessage: 'Failed to delete task.',
+    });
 };
 
 export const fetchTaskById = async (taskId: number): Promise<Task> => {
@@ -178,16 +214,18 @@ export const fetchTaskById = async (taskId: number): Promise<Task> => {
 };
 
 export const fetchTaskByUid = async (uid: string): Promise<Task> => {
-    const response = await fetch(
-        getApiPath(`task/${encodeURIComponent(uid)}`),
-        {
-            credentials: 'include',
-            headers: getDefaultHeaders(),
-        }
-    );
+    return cacheReadOne<Task>('tasks', uid, async () => {
+        const response = await fetch(
+            getApiPath(`task/${encodeURIComponent(uid)}`),
+            {
+                credentials: 'include',
+                headers: getDefaultHeaders(),
+            }
+        );
 
-    await handleAuthResponse(response, 'Failed to fetch task.');
-    return await response.json();
+        await handleAuthResponse(response, 'Failed to fetch task.');
+        return await response.json();
+    });
 };
 
 export const fetchSubtasks = async (parentTaskUid: string): Promise<Task[]> => {

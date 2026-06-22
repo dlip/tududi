@@ -27,6 +27,8 @@ import { isAuthError } from './utils/authUtils';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getApiPath } from './config/paths';
 import { KeyboardShortcutsConfig } from './utils/keyboardShortcutsService';
+import { isOnline, subscribeConnectivity } from './offline/connectivity';
+import { subscribePendingCount, setOutboxReporter } from './offline/outbox';
 
 interface LayoutProps {
     currentUser: User;
@@ -61,6 +63,30 @@ const Layout: React.FC<LayoutProps> = ({
     const [selectedArea, setSelectedArea] = useState<Area | null>(null);
     const [selectedTag, setSelectedTag] = useState<Tag | null>(null);
     const [keyboardShortcuts, setKeyboardShortcuts] = useState<KeyboardShortcutsConfig | null>(null);
+    const [online, setOnline] = useState<boolean>(isOnline());
+    const [pendingCount, setPendingCount] = useState<number>(0);
+
+    // Track connectivity + the offline mutation queue, and surface sync
+    // conflicts (entities rejected by the server during replay) as toasts.
+    useEffect(() => {
+        const unsubConnectivity = subscribeConnectivity(setOnline);
+        const unsubPending = subscribePendingCount(setPendingCount);
+        setOutboxReporter((failed) => {
+            showErrorToast(
+                t(
+                    'offline.syncConflict',
+                    'A change to {{entity}} could not be synced and was discarded.',
+                    { entity: failed.entity }
+                )
+            );
+        });
+        return () => {
+            unsubConnectivity();
+            unsubPending();
+            setOutboxReporter(null);
+        };
+    }, [showErrorToast, t]);
+
 
     // Fetch keyboard shortcuts from profile
     useEffect(() => {
@@ -348,6 +374,33 @@ const Layout: React.FC<LayoutProps> = ({
 
     const mainContentMarginLeft = isSidebarOpen ? 'ml-72' : 'ml-0';
 
+    const offlineIndicator =
+        !online || pendingCount > 0 ? (
+            <div
+                className={`fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md text-sm text-white ${
+                    online ? 'bg-blue-600' : 'bg-gray-700'
+                }`}
+            >
+                <span
+                    className={`inline-block h-2 w-2 rounded-full ${
+                        online ? 'bg-blue-200' : 'bg-yellow-400'
+                    }`}
+                />
+                {online
+                    ? t('offline.syncing', 'Syncing {{count}} change(s)…', {
+                          count: pendingCount,
+                      })
+                    : pendingCount > 0
+                      ? t(
+                            'offline.offlinePending',
+                            'Offline – {{count}} change(s) queued',
+                            { count: pendingCount }
+                        )
+                      : t('offline.offline', 'Offline')}
+            </div>
+        ) : null;
+
+
     const isLoading =
         isNotesLoading ||
         isAreasLoading ||
@@ -558,6 +611,8 @@ const Layout: React.FC<LayoutProps> = ({
                         tag={selectedTag}
                     />
                 )}
+
+                {offlineIndicator}
             </div>
         </SidebarProvider>
     );

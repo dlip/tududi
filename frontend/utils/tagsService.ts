@@ -1,8 +1,10 @@
 import { Tag } from '../entities/Tag';
-import { handleAuthResponse, getPostHeadersWithCsrf } from './authUtils';
+import { handleAuthResponse } from './authUtils';
 import { extractUidFromSlug } from './slugUtils';
 import { getApiPath } from '../config/paths';
-import { getCsrfToken } from './csrfService';
+import { offlineMutate, cacheReadCollection } from '../offline/offlineFetch';
+import { getAll as getCachedCollection } from '../offline/db';
+import { generateClientUid } from '../offline/clientUid';
 
 export const fetchTags = async (): Promise<Tag[]> => {
     try {
@@ -14,8 +16,13 @@ export const fetchTags = async (): Promise<Tag[]> => {
             },
         });
         await handleAuthResponse(response, 'Failed to fetch tags.');
-        return await response.json();
+        const tags: Tag[] = await response.json();
+        void cacheReadCollection('tags', async () => tags);
+        return tags;
     } catch (error) {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            return getCachedCollection<Tag>('tags').catch(() => []);
+        }
         console.error('Tags fetch error:', error);
         // Return empty array to prevent UI from breaking
         return [];
@@ -23,73 +30,53 @@ export const fetchTags = async (): Promise<Tag[]> => {
 };
 
 export const createTag = async (tagData: Tag): Promise<Tag> => {
-    const response = await fetch(getApiPath('tag'), {
+    const uid = (tagData as any).uid || generateClientUid();
+    const payload = { ...tagData, uid };
+    const now = new Date().toISOString();
+
+    return offlineMutate<Tag>({
+        entity: 'tags',
+        op: 'create',
+        uid,
         method: 'POST',
-        credentials: 'include',
-        headers: await getPostHeadersWithCsrf(),
-        body: JSON.stringify(tagData),
+        apiPath: getApiPath('tag'),
+        payload,
+        optimisticResult: {
+            ...payload,
+            created_at: now,
+            updated_at: now,
+        } as Tag,
+        errorMessage: 'Failed to create tag.',
     });
-
-    if (!response.ok) {
-        // Handle authentication errors first
-        if (response.status === 401) {
-            await handleAuthResponse(response, 'Failed to create tag.');
-            return Promise.reject(new Error('Authentication required'));
-        }
-
-        // Try to get the specific error message from the response
-        let errorMessage = 'Failed to create tag.';
-        try {
-            const errorData = await response.json();
-            errorMessage = errorData.error || errorMessage;
-        } catch {
-            // If parsing fails, use default message
-        }
-        throw new Error(errorMessage);
-    }
-
-    return await response.json();
 };
 
 export const updateTag = async (tagUid: string, tagData: Tag): Promise<Tag> => {
-    const response = await fetch(getApiPath(`tag/${tagUid}`), {
+    return offlineMutate<Tag>({
+        entity: 'tags',
+        op: 'update',
+        uid: tagUid,
         method: 'PATCH',
-        credentials: 'include',
-        headers: await getPostHeadersWithCsrf(),
-        body: JSON.stringify(tagData),
+        apiPath: getApiPath(`tag/${tagUid}`),
+        payload: tagData,
+        optimisticResult: {
+            ...tagData,
+            uid: tagUid,
+            updated_at: new Date().toISOString(),
+        } as Tag,
+        errorMessage: 'Failed to update tag.',
     });
-
-    if (!response.ok) {
-        // Handle authentication errors first
-        if (response.status === 401) {
-            await handleAuthResponse(response, 'Failed to update tag.');
-        }
-
-        // Try to get the specific error message from the response
-        let errorMessage = 'Failed to update tag.';
-        try {
-            const errorData = await response.json();
-            errorMessage = errorData.error || errorMessage;
-        } catch {
-            // If parsing fails, use default message
-        }
-        throw new Error(errorMessage);
-    }
-
-    return await response.json();
 };
 
 export const deleteTag = async (tagUid: string): Promise<void> => {
-    const response = await fetch(getApiPath(`tag/${tagUid}`), {
+    await offlineMutate<void>({
+        entity: 'tags',
+        op: 'delete',
+        uid: tagUid,
         method: 'DELETE',
-        credentials: 'include',
-        headers: {
-            Accept: 'application/json',
-            'x-csrf-token': await getCsrfToken(),
-        },
+        apiPath: getApiPath(`tag/${tagUid}`),
+        optimisticResult: undefined,
+        errorMessage: 'Failed to delete tag.',
     });
-
-    await handleAuthResponse(response, 'Failed to delete tag.');
 };
 
 export const fetchTagBySlug = async (uidSlug: string): Promise<Tag> => {

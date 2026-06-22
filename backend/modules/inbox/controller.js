@@ -56,8 +56,12 @@ const inboxController = {
     async create(req, res, next) {
         try {
             const userId = requireUserId(req);
-            const { content, source } = req.body;
-            const item = await inboxService.create(userId, { content, source });
+            const { content, source, uid } = req.body;
+            const item = await inboxService.create(userId, {
+                content,
+                source,
+                uid,
+            });
             res.status(201).json(item);
         } catch (error) {
             next(error);

@@ -3,6 +3,7 @@
 const _ = require('lodash');
 const notesRepository = require('./repository');
 const { validateUid } = require('./validation');
+const { isValidUid } = require('../../utils/uid');
 const {
     NotFoundError,
     ValidationError,
@@ -171,12 +172,16 @@ class NotesService {
      */
     async create(
         userId,
-        { title, content, project_uid, project_id, tags, color }
+        { title, content, project_uid, project_id, tags, color, uid }
     ) {
         const noteAttributes = { title, content };
 
         if (color !== undefined) {
             noteAttributes.color = color;
+        }
+
+        if (isValidUid(uid)) {
+            noteAttributes.uid = uid;
         }
 
         // Handle project assignment with permission check

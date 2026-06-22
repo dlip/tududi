@@ -1,8 +1,11 @@
 import { InboxItem } from '../entities/InboxItem';
 import { useStore } from '../store/useStore';
-import { handleAuthResponse, getPostHeadersWithCsrf } from './authUtils';
+import { handleAuthResponse } from './authUtils';
 import { getApiPath } from '../config/paths';
 import { getCsrfToken } from './csrfService';
+import { offlineMutate, cacheReadCollection } from '../offline/offlineFetch';
+import { getAll as getCachedCollection } from '../offline/db';
+import { generateClientUid } from '../offline/clientUid';
 
 // API functions
 export const fetchInboxItems = async (
@@ -22,65 +25,102 @@ export const fetchInboxItems = async (
         offset: offset.toString(),
     });
 
-    const response = await fetch(getApiPath(`inbox?${params}`), {
-        credentials: 'include',
-        headers: {
-            Accept: 'application/json',
-        },
-    });
-
-    await handleAuthResponse(response, 'Failed to fetch inbox items.');
-
-    const result = await response.json();
-
-    // Handle backward compatibility - if it's an array, convert to new format
-    if (Array.isArray(result)) {
-        return {
-            items: result,
-            pagination: {
-                total: result.length,
-                limit: result.length,
-                offset: 0,
-                hasMore: false,
+    try {
+        const response = await fetch(getApiPath(`inbox?${params}`), {
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
             },
-        };
-    }
+        });
 
-    if (!result.items || !Array.isArray(result.items)) {
-        throw new Error('Resulting inbox items are not in expected format.');
-    }
+        await handleAuthResponse(response, 'Failed to fetch inbox items.');
 
-    return result;
+        const result = await response.json();
+
+        // Handle backward compatibility - if it's an array, convert to new format
+        if (Array.isArray(result)) {
+            void cacheReadCollection('inbox', async () => result);
+            return {
+                items: result,
+                pagination: {
+                    total: result.length,
+                    limit: result.length,
+                    offset: 0,
+                    hasMore: false,
+                },
+            };
+        }
+
+        if (!result.items || !Array.isArray(result.items)) {
+            throw new Error(
+                'Resulting inbox items are not in expected format.'
+            );
+        }
+
+        void cacheReadCollection('inbox', async () => result.items);
+        return result;
+    } catch (error) {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            const cached = await getCachedCollection<InboxItem>('inbox').catch(
+                () => [] as InboxItem[]
+            );
+            return {
+                items: cached,
+                pagination: {
+                    total: cached.length,
+                    limit: cached.length,
+                    offset: 0,
+                    hasMore: false,
+                },
+            };
+        }
+        throw error;
+    }
 };
 
 export const createInboxItem = async (
     content: string,
     source?: string
 ): Promise<InboxItem> => {
-    const response = await fetch(getApiPath('inbox'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: await getPostHeadersWithCsrf(),
-        body: JSON.stringify(source ? { content, source } : { content }),
-    });
+    const uid = generateClientUid();
+    const payload: any = source ? { content, source, uid } : { content, uid };
+    const now = new Date().toISOString();
 
-    await handleAuthResponse(response, 'Failed to create inbox item.');
-    return await response.json();
+    return offlineMutate<InboxItem>({
+        entity: 'inbox',
+        op: 'create',
+        uid,
+        method: 'POST',
+        apiPath: getApiPath('inbox'),
+        payload,
+        optimisticResult: {
+            ...payload,
+            status: 'added',
+            created_at: now,
+            updated_at: now,
+        } as InboxItem,
+        errorMessage: 'Failed to create inbox item.',
+    });
 };
 
 export const updateInboxItem = async (
     itemUid: string,
     content: string
 ): Promise<InboxItem> => {
-    const response = await fetch(getApiPath(`inbox/${itemUid}`), {
+    return offlineMutate<InboxItem>({
+        entity: 'inbox',
+        op: 'update',
+        uid: itemUid,
         method: 'PATCH',
-        credentials: 'include',
-        headers: await getPostHeadersWithCsrf(),
-        body: JSON.stringify({ content }),
+        apiPath: getApiPath(`inbox/${itemUid}`),
+        payload: { content },
+        optimisticResult: {
+            uid: itemUid,
+            content,
+            updated_at: new Date().toISOString(),
+        } as InboxItem,
+        errorMessage: 'Failed to update inbox item.',
     });
-
-    await handleAuthResponse(response, 'Failed to update inbox item.');
-    return await response.json();
 };
 
 export const processInboxItem = async (itemUid: string): Promise<InboxItem> => {
@@ -98,16 +138,15 @@ export const processInboxItem = async (itemUid: string): Promise<InboxItem> => {
 };
 
 export const deleteInboxItem = async (itemUid: string): Promise<void> => {
-    const response = await fetch(getApiPath(`inbox/${itemUid}`), {
+    await offlineMutate<void>({
+        entity: 'inbox',
+        op: 'delete',
+        uid: itemUid,
         method: 'DELETE',
-        credentials: 'include',
-        headers: {
-            Accept: 'application/json',
-            'x-csrf-token': await getCsrfToken(),
-        },
+        apiPath: getApiPath(`inbox/${itemUid}`),
+        optimisticResult: undefined,
+        errorMessage: 'Failed to delete inbox item.',
     });
-
-    await handleAuthResponse(response, 'Failed to delete inbox item.');
 };
 
 // Track last check time to detect new items

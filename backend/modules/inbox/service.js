@@ -9,6 +9,7 @@ const {
     validateSource,
     buildTitleFromContent,
 } = require('./validation');
+const { isValidUid } = require('../../utils/uid');
 const { NotFoundError } = require('../../shared/errors');
 const { processInboxItem } = require('./inboxProcessingService');
 
@@ -65,7 +66,7 @@ class InboxService {
     /**
      * Create a new inbox item.
      */
-    async create(userId, { content, source }) {
+    async create(userId, { content, source, uid }) {
         const validatedContent = validateContent(content);
         const validatedSource = validateSource(source);
         const title = buildTitleFromContent(validatedContent);
@@ -74,6 +75,7 @@ class InboxService {
             content: validatedContent,
             title,
             source: validatedSource,
+            uid: isValidUid(uid) ? uid : undefined,
         });
 
         return _.pick(item, PUBLIC_ATTRIBUTES);

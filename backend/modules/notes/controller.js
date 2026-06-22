@@ -58,7 +58,7 @@ const notesController = {
     async create(req, res, next) {
         try {
             const userId = requireUserId(req);
-            const { title, content, project_uid, project_id, tags, color } =
+            const { title, content, project_uid, project_id, tags, color, uid } =
                 req.body;
 
             const note = await notesService.create(userId, {
@@ -68,6 +68,7 @@ const notesController = {
                 project_id,
                 tags,
                 color,
+                uid,
             });
 
             res.status(201).json(note);

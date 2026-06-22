@@ -9,29 +9,10 @@ import './styles/markdown.css'; // Import markdown styles
 import { I18nextProvider } from 'react-i18next';
 import i18n from './i18n'; // Import the i18n instance with its configuration
 import { getBasePath } from './config/paths';
+import { setupServiceWorker } from './sw/registerServiceWorker';
 
-const isDevelopment = process.env.NODE_ENV !== 'production';
-
-// Clear out any lingering service workers/caches from other branches (e.g. PWA)
-if (isDevelopment && 'serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-        registrations.forEach((registration) => {
-            registration.unregister().catch(() => {
-                // Non-fatal during development cleanup
-            });
-        });
-    });
-
-    if ('caches' in window) {
-        caches.keys().then((cacheNames) => {
-            cacheNames.forEach((cacheName) => {
-                caches.delete(cacheName).catch(() => {
-                    // Ignore cache cleanup failures during dev
-                });
-            });
-        });
-    }
-}
+// Register the service worker (prod) or clean up stale workers (dev).
+setupServiceWorker();
 
 const storedPreference = localStorage.getItem('isDarkMode');
 const prefersDarkMode = window.matchMedia(
