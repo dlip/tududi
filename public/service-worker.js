@@ -6,7 +6,7 @@
  * offline.
  */
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `tududi-shell-${VERSION}`;
 const ASSET_CACHE = `tududi-assets-${VERSION}`;
 const API_CACHE = `tududi-api-${VERSION}`;
@@ -17,19 +17,33 @@ const KNOWN_CACHES = [SHELL_CACHE, ASSET_CACHE, API_CACHE];
 // sub-path (e.g. Home Assistant ingress) as well as at the root.
 const SCOPE_URL = new URL(self.registration.scope);
 const BASE_PATH = SCOPE_URL.pathname.replace(/\/$/, '');
+// Cache the shell under the scope root (the actual start URL the browser
+// navigates to). We also try /index.html as a secondary key.
+const START_URL = `${BASE_PATH}/`;
 const SHELL_URL = `${BASE_PATH}/index.html`;
+
+// Store a response as the app shell, but only when it is safe to cache.
+// `cache.put` throws for redirected responses, which is the main reason the
+// shell silently failed to cache before.
+async function cacheShell(response) {
+    if (!response || !response.ok || response.redirected) {
+        return;
+    }
+    const cache = await caches.open(SHELL_CACHE);
+    await cache.put(START_URL, response.clone());
+}
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
         (async () => {
             try {
-                const cache = await caches.open(SHELL_CACHE);
-                await cache.add(
-                    new Request(SHELL_URL, { cache: 'reload' })
-                );
+                // Use a manual-redirect fetch so a trailing-slash/login
+                // redirect doesn't make the shell uncacheable.
+                const response = await fetch(START_URL, { cache: 'reload' });
+                await cacheShell(response);
             } catch (e) {
-                // Shell pre-cache is best-effort; it will be populated on
-                // the first successful navigation otherwise.
+                // Best-effort: the shell is also cached on the first
+                // successful navigation while online.
             }
             await self.skipWaiting();
         })()
@@ -121,12 +135,12 @@ self.addEventListener('fetch', (event) => {
             (async () => {
                 try {
                     const response = await fetch(request);
-                    const cache = await caches.open(SHELL_CACHE);
-                    cache.put(SHELL_URL, response.clone());
+                    await cacheShell(response);
                     return response;
                 } catch (e) {
                     const cache = await caches.open(SHELL_CACHE);
                     const cachedShell =
+                        (await cache.match(START_URL)) ||
                         (await cache.match(SHELL_URL)) ||
                         (await cache.match(request));
                     if (cachedShell) {
