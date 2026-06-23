@@ -1,9 +1,15 @@
 import { Project } from '../entities/Project';
 import { handleAuthResponse } from './authUtils';
 import { getApiPath } from '../config/paths';
-import { offlineMutate, cacheReadCollection } from '../offline/offlineFetch';
+import {
+    offlineMutate,
+    cacheReadCollection,
+    cacheReadOne,
+} from '../offline/offlineFetch';
 import { getAll as getCachedCollection } from '../offline/db';
 import { generateClientUid } from '../offline/clientUid';
+import { extractUidFromSlug } from './slugUtils';
+import { getCurrentUser } from './userUtils';
 
 export const fetchProjects = async (
     stateFilter = 'all',
@@ -60,13 +66,19 @@ export const fetchGroupedProjects = async (
 };
 
 export const fetchProjectById = async (projectId: string): Promise<Project> => {
-    const response = await fetch(getApiPath(`project/${projectId}`), {
-        credentials: 'include',
-        headers: { Accept: 'application/json' },
-    });
+    return cacheReadOne<Project>(
+        'projects',
+        extractUidFromSlug(projectId),
+        async () => {
+            const response = await fetch(getApiPath(`project/${projectId}`), {
+                credentials: 'include',
+                headers: { Accept: 'application/json' },
+            });
 
-    await handleAuthResponse(response, 'Failed to fetch project details.');
-    return await response.json();
+            await handleAuthResponse(response, 'Failed to fetch project details.');
+            return await response.json();
+        }
+    );
 };
 
 export const createProject = async (
@@ -85,6 +97,7 @@ export const createProject = async (
         payload,
         optimisticResult: {
             ...payload,
+            user_uid: getCurrentUser()?.uid,
             created_at: now,
             updated_at: now,
         } as Project,
@@ -129,13 +142,19 @@ export const deleteProject = async (projectUid: string): Promise<void> => {
 };
 
 export const fetchProjectBySlug = async (uidSlug: string): Promise<Project> => {
-    const response = await fetch(getApiPath(`project/${uidSlug}`), {
-        credentials: 'include',
-        headers: {
-            Accept: 'application/json',
-        },
-    });
+    return cacheReadOne<Project>(
+        'projects',
+        extractUidFromSlug(uidSlug),
+        async () => {
+            const response = await fetch(getApiPath(`project/${uidSlug}`), {
+                credentials: 'include',
+                headers: {
+                    Accept: 'application/json',
+                },
+            });
 
-    await handleAuthResponse(response, 'Failed to fetch project.');
-    return await response.json();
+            await handleAuthResponse(response, 'Failed to fetch project.');
+            return await response.json();
+        }
+    );
 };

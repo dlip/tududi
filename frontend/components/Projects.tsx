@@ -61,7 +61,9 @@ const Projects: React.FC = () => {
         isOpen: boolean;
         project: Project | null;
     }>({ isOpen: false, project: null });
-    const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
+    const [activeDropdown, setActiveDropdown] = useState<
+        number | string | null
+    >(null);
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
         const saved = localStorage.getItem('projectsViewMode');

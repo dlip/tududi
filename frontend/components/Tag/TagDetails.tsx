@@ -95,7 +95,9 @@ const TagDetails: React.FC = () => {
     }, [allProjects, projects]);
 
     // State for ProjectItem components
-    const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
+    const [activeDropdown, setActiveDropdown] = useState<
+        number | string | null
+    >(null);
     const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null);
     const [, setProjectToDelete] = useState<Project | null>(null);
 
