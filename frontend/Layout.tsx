@@ -65,12 +65,25 @@ const Layout: React.FC<LayoutProps> = ({
     const [keyboardShortcuts, setKeyboardShortcuts] = useState<KeyboardShortcutsConfig | null>(null);
     const [online, setOnline] = useState<boolean>(isOnline());
     const [pendingCount, setPendingCount] = useState<number>(0);
+    const [justSynced, setJustSynced] = useState<boolean>(false);
 
     // Track connectivity + the offline mutation queue, and surface sync
     // conflicts (entities rejected by the server during replay) as toasts.
     useEffect(() => {
         const unsubConnectivity = subscribeConnectivity(setOnline);
-        const unsubPending = subscribePendingCount(setPendingCount);
+        let prevPending = 0;
+        let syncedTimer: ReturnType<typeof setTimeout> | undefined;
+        const unsubPending = subscribePendingCount((count) => {
+            // When the queue drains (had pending, now zero) flash a brief
+            // "Synced" confirmation so the indicator doesn't just vanish.
+            if (prevPending > 0 && count === 0) {
+                setJustSynced(true);
+                if (syncedTimer) clearTimeout(syncedTimer);
+                syncedTimer = setTimeout(() => setJustSynced(false), 3000);
+            }
+            prevPending = count;
+            setPendingCount(count);
+        });
         setOutboxReporter((failed) => {
             showErrorToast(
                 t(
@@ -81,6 +94,7 @@ const Layout: React.FC<LayoutProps> = ({
             );
         });
         return () => {
+            if (syncedTimer) clearTimeout(syncedTimer);
             unsubConnectivity();
             unsubPending();
             setOutboxReporter(null);
@@ -375,28 +389,38 @@ const Layout: React.FC<LayoutProps> = ({
     const mainContentMarginLeft = isSidebarOpen ? 'ml-72' : 'ml-0';
 
     const offlineIndicator =
-        !online || pendingCount > 0 ? (
+        !online || pendingCount > 0 || justSynced ? (
             <div
                 className={`fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md text-sm text-white ${
-                    online ? 'bg-blue-600' : 'bg-gray-700'
+                    !online
+                        ? 'bg-gray-700'
+                        : pendingCount > 0
+                          ? 'bg-blue-600'
+                          : 'bg-green-600'
                 }`}
             >
                 <span
                     className={`inline-block h-2 w-2 rounded-full ${
-                        online ? 'bg-blue-200' : 'bg-yellow-400'
+                        !online
+                            ? 'bg-yellow-400'
+                            : pendingCount > 0
+                              ? 'bg-blue-200'
+                              : 'bg-green-200'
                     }`}
                 />
-                {online
-                    ? t('offline.syncing', 'Syncing {{count}} change(s)…', {
-                          count: pendingCount,
-                      })
+                {!online
+                    ? pendingCount > 0
+                        ? t(
+                              'offline.offlinePending',
+                              'Offline – {{count}} change(s) queued',
+                              { count: pendingCount }
+                          )
+                        : t('offline.offline', 'Offline')
                     : pendingCount > 0
-                      ? t(
-                            'offline.offlinePending',
-                            'Offline – {{count}} change(s) queued',
-                            { count: pendingCount }
-                        )
-                      : t('offline.offline', 'Offline')}
+                      ? t('offline.syncing', 'Syncing {{count}} change(s)…', {
+                            count: pendingCount,
+                        })
+                      : t('offline.synced', 'All changes synced')}
             </div>
         ) : null;
 

@@ -3,6 +3,7 @@
     "offline": "Offline",
     "offlinePending": "Offline – {{count}} change(s) queued",
     "syncing": "Syncing {{count}} change(s)…",
+    "synced": "All changes synced",
     "syncConflict": "A change to {{entity}} could not be synced and was discarded."
   },
   "common": {

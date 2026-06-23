@@ -109,7 +109,9 @@ const ViewDetail: React.FC = () => {
     const limit = 20;
 
     // State for ProjectItem and Note components
-    const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
+    const [activeDropdown, setActiveDropdown] = useState<
+        number | string | null
+    >(null);
     const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null);
     const [, setProjectToDelete] = useState<Project | null>(null);
 

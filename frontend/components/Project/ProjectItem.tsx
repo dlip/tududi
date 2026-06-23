@@ -26,8 +26,10 @@ interface ProjectItemProps {
     project: Project;
     viewMode: 'cards' | 'list';
     getCompletionPercentage: () => number;
-    activeDropdown: number | null;
-    setActiveDropdown: React.Dispatch<React.SetStateAction<number | null>>;
+    activeDropdown: number | string | null;
+    setActiveDropdown: React.Dispatch<
+        React.SetStateAction<number | string | null>
+    >;
     handleEditProject: (project: Project) => void;
     setProjectToDelete: React.Dispatch<React.SetStateAction<Project | null>>;
     setIsConfirmDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -322,12 +324,14 @@ const ProjectItem: React.FC<ProjectItemProps> = ({
                                         onClick={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            const projectId = project.id;
-                                            if (projectId !== undefined) {
+                                            const dropdownKey =
+                                                project.id ?? project.uid;
+                                            if (dropdownKey !== undefined) {
                                                 setActiveDropdown(
-                                                    activeDropdown === projectId
+                                                    activeDropdown ===
+                                                        dropdownKey
                                                         ? null
-                                                        : projectId
+                                                        : dropdownKey
                                                 );
                                             }
                                         }}
@@ -338,8 +342,9 @@ const ProjectItem: React.FC<ProjectItemProps> = ({
                                     >
                                         <EllipsisVerticalIcon className="h-5 w-5" />
                                     </button>
-                                    {project.id !== undefined &&
-                                        activeDropdown === project.id && (
+                                    {(project.id ?? project.uid) !== undefined &&
+                                        activeDropdown ===
+                                            (project.id ?? project.uid) && (
                                             <div className="absolute right-0 mt-2 w-32 bg-white dark:bg-gray-800 shadow-lg rounded-md z-30">
                                                 <button
                                                     onClick={(e) => {
