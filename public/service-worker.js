@@ -6,7 +6,7 @@
  * offline.
  */
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL_CACHE = `tududi-shell-${VERSION}`;
 const ASSET_CACHE = `tududi-assets-${VERSION}`;
 const API_CACHE = `tududi-api-${VERSION}`;
@@ -22,15 +22,28 @@ const BASE_PATH = SCOPE_URL.pathname.replace(/\/$/, '');
 const START_URL = `${BASE_PATH}/`;
 const SHELL_URL = `${BASE_PATH}/index.html`;
 
-// Store a response as the app shell, but only when it is safe to cache.
-// `cache.put` throws for redirected responses, which is the main reason the
-// shell silently failed to cache before.
+// Store a response as the app shell. `cache.put` rejects redirected
+// responses, so when the start URL redirects (trailing slash, auth, etc.)
+// we rebuild a clean, non-redirected Response from the body before caching.
+// The shell is stored under both the start URL and /index.html so the
+// navigate fallback can find it regardless of which key it looks up.
 async function cacheShell(response) {
-    if (!response || !response.ok || response.redirected) {
-        return;
+    if (!response || !response.ok) {
+        return false;
+    }
+    let cacheable = response;
+    if (response.redirected || response.type === 'opaqueredirect') {
+        const body = await response.clone().blob();
+        cacheable = new Response(body, {
+            status: 200,
+            statusText: 'OK',
+            headers: response.headers,
+        });
     }
     const cache = await caches.open(SHELL_CACHE);
-    await cache.put(START_URL, response.clone());
+    await cache.put(START_URL, cacheable.clone());
+    await cache.put(SHELL_URL, cacheable.clone());
+    return true;
 }
 
 // Small static files the browser requests on every page load (favicons,
@@ -48,10 +61,23 @@ self.addEventListener('install', (event) => {
     event.waitUntil(
         (async () => {
             try {
-                // Use a manual-redirect fetch so a trailing-slash/login
-                // redirect doesn't make the shell uncacheable.
-                const response = await fetch(START_URL, { cache: 'reload' });
-                await cacheShell(response);
+                // Fetch the shell at install time. This is the only reliable
+                // chance to cache it: once the SW controls the page, all
+                // in-app navigation is client-side (SPA) and never re-hits
+                // the navigate handler below.
+                let cached = false;
+                try {
+                    const response = await fetch(START_URL, { cache: 'reload' });
+                    cached = await cacheShell(response);
+                } catch (e) {
+                    // Try the explicit index.html below.
+                }
+                if (!cached) {
+                    const indexResponse = await fetch(SHELL_URL, {
+                        cache: 'reload',
+                    });
+                    await cacheShell(indexResponse);
+                }
             } catch (e) {
                 // Best-effort: the shell is also cached on the first
                 // successful navigation while online.
