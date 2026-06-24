@@ -6,7 +6,7 @@
  * offline.
  */
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = `tududi-shell-${VERSION}`;
 const ASSET_CACHE = `tududi-assets-${VERSION}`;
 const API_CACHE = `tududi-api-${VERSION}`;
@@ -33,6 +33,17 @@ async function cacheShell(response) {
     await cache.put(START_URL, response.clone());
 }
 
+// Small static files the browser requests on every page load (favicons,
+// manifest). Precaching them keeps the console clean offline.
+const PRECACHE_ASSETS = [
+    'favicon.ico',
+    'favicon-16.png',
+    'favicon-32.png',
+    'favicon-48.png',
+    'favicon.png',
+    'manifest.json',
+].map((name) => `${BASE_PATH}/${name}`);
+
 self.addEventListener('install', (event) => {
     event.waitUntil(
         (async () => {
@@ -44,6 +55,12 @@ self.addEventListener('install', (event) => {
             } catch (e) {
                 // Best-effort: the shell is also cached on the first
                 // successful navigation while online.
+            }
+            try {
+                const assetCache = await caches.open(ASSET_CACHE);
+                await assetCache.addAll(PRECACHE_ASSETS);
+            } catch (e) {
+                // Best-effort: assets are also cached on first request.
             }
             await self.skipWaiting();
         })()
@@ -100,9 +117,14 @@ async function networkFirst(request, cacheName) {
 }
 
 // Stale-while-revalidate: serve cache immediately, refresh in background.
+// When offline, skip the network entirely so we don't generate console
+// noise from requests we already know will fail.
 async function staleWhileRevalidate(request, cacheName) {
     const cache = await caches.open(cacheName);
     const cached = await cache.match(request);
+    if (cached && self.navigator && self.navigator.onLine === false) {
+        return cached;
+    }
     const networkPromise = fetch(request)
         .then((response) => {
             if (response && response.ok) {

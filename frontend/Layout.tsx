@@ -105,6 +105,7 @@ const Layout: React.FC<LayoutProps> = ({
     // Fetch keyboard shortcuts from profile
     useEffect(() => {
         const fetchKeyboardShortcuts = async () => {
+            if (!isOnline()) return;
             try {
                 const response = await fetch(getApiPath('profile'));
                 if (response.ok) {
