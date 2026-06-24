@@ -124,7 +124,7 @@ function registerTagTools(server, context, tools) {
             const tag = await tagsService.update(
                 context.userId,
                 params.uid,
-                params.name
+                { name: params.name }
             );
 
             return {
