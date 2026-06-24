@@ -9,8 +9,10 @@
 
 import {
     OfflineEntity,
+    META_STORE,
     getAll as dbGetAll,
     get as dbGet,
+    putWithKey,
     replaceCollection,
 } from './db';
 import { enqueue, flush, OutboxOp } from './outbox';
@@ -115,7 +117,18 @@ export async function cacheReadCollection<T extends { uid?: string }>(
 
 /**
  * Wrap a single-record read with cache fallback by uid.
+ *
+ * On a successful network read we write the *full* detail record through to
+ * the `meta` store under a dedicated key. The per-entity collection store is
+ * populated by list endpoints, whose records are often trimmed (e.g. project
+ * list tasks only carry id/status, no name), so we can't rely on it for the
+ * richer detail view. Offline we prefer the cached detail record and fall
+ * back to the collection record only if no detail snapshot exists.
  */
+function detailKey(entity: OfflineEntity, uid: string): string {
+    return `detail:${entity}:${uid}`;
+}
+
 export async function cacheReadOne<T extends { uid?: string }>(
     entity: OfflineEntity,
     uid: string,
@@ -123,9 +136,21 @@ export async function cacheReadOne<T extends { uid?: string }>(
 ): Promise<T> {
     try {
         const record = await loader();
+        if (record) {
+            await putWithKey(META_STORE, record, detailKey(entity, uid)).catch(
+                () => undefined
+            );
+        }
         return record;
     } catch (error) {
         if (isNetworkError(error) || !isOnline()) {
+            const cachedDetail = await dbGet<T>(
+                META_STORE,
+                detailKey(entity, uid)
+            ).catch(() => undefined);
+            if (cachedDetail) {
+                return cachedDetail;
+            }
             const cached = await dbGet<T>(entity, uid);
             if (cached) {
                 return cached;

@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { getCsrfToken } from '../../utils/csrfService';
 import {
     MagnifyingGlassIcon,
     EllipsisHorizontalCircleIcon,
@@ -27,7 +26,7 @@ import {
     deleteProject,
     fetchProjects,
 } from '../../utils/projectsService';
-import { createTask, deleteTask } from '../../utils/tasksService';
+import { createTask, deleteTask, updateTask } from '../../utils/tasksService';
 import {
     updateNote,
     deleteNote as apiDeleteNote,
@@ -323,20 +322,7 @@ const ProjectDetails: React.FC = () => {
             );
             return;
         }
-        const response = await fetch(getApiPath(`task/${updatedTask.uid}`), {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-csrf-token': await getCsrfToken(),
-            },
-            credentials: 'include',
-            body: JSON.stringify(updatedTask),
-        });
-        if (!response.ok) {
-            await response.json();
-            throw new Error('Failed to update task');
-        }
-        const savedTask = await response.json();
+        const savedTask = await updateTask(updatedTask.uid!, updatedTask);
         const savedTaskProjectId = savedTask.project_id ?? null;
         const currentProjectId = project?.id ?? null;
         if (savedTaskProjectId !== currentProjectId) {
