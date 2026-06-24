@@ -285,6 +285,7 @@ const ProjectDetails: React.FC = () => {
             name: taskName,
             status: 0,
             project_id: project.id,
+            project_uid: project.uid,
             completed_at: null,
         });
         setTasks([...tasks, newTask]);
@@ -438,7 +439,8 @@ const ProjectDetails: React.FC = () => {
         const newTask = await createTask({
             name: actionDescription,
             status: 0,
-            project_id: projectId,
+            project_id: projectId ?? project?.id,
+            project_uid: project?.uid,
             priority: 0,
             completed_at: null,
         });

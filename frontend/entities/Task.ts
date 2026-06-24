@@ -15,6 +15,7 @@ export interface Task {
     note?: string;
     tags?: Tag[];
     project_id?: number;
+    project_uid?: string;
     Project?: Project;
     created_at?: string;
     updated_at?: string;

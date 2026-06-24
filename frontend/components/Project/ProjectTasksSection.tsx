@@ -45,9 +45,10 @@ const ProjectTasksSection: React.FC<ProjectTasksSectionProps> = ({
                 <div className="transition-all duration-300 ease-in-out opacity-100 transform translate-y-0">
                     <AutoSuggestNextActionBox
                         onAddAction={(actionDescription) => {
-                            if (project?.id) {
-                                onAddNextAction(project.id, actionDescription);
-                            }
+                            onAddNextAction(
+                                project?.id as number,
+                                actionDescription
+                            );
                         }}
                         onDismiss={onDismissNextAction}
                     />
