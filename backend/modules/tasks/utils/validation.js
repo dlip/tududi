@@ -1,14 +1,24 @@
 const { Project, Task } = require('../../../models');
 const permissionsService = require('../../../services/permissionsService');
 
-async function validateProjectAccess(projectId, userId) {
-    if (!projectId || !projectId.toString().trim()) {
-        return null;
-    }
+async function validateProjectAccess(projectId, userId, projectUid) {
+    let project = null;
 
-    const project = await Project.findOne({ where: { id: projectId } });
-    if (!project) {
-        throw new Error('Invalid project.');
+    if (projectId && projectId.toString().trim()) {
+        project = await Project.findOne({ where: { id: projectId } });
+        if (!project) {
+            throw new Error('Invalid project.');
+        }
+    } else if (projectUid && projectUid.toString().trim()) {
+        // Offline-created tasks reference their project by client-generated
+        // uid because no numeric id existed yet. Resolve it once the project
+        // has synced.
+        project = await Project.findOne({ where: { uid: projectUid } });
+        if (!project) {
+            return null;
+        }
+    } else {
+        return null;
     }
 
     const projectAccess = await permissionsService.getAccess(
@@ -24,7 +34,7 @@ async function validateProjectAccess(projectId, userId) {
         throw new Error('Forbidden');
     }
 
-    return projectId;
+    return project.id;
 }
 
 async function validateParentTaskAccess(parentTaskId, userId) {

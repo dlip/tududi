@@ -404,7 +404,7 @@ router.get('/tasks/metrics', async (req, res) => {
 
 router.post('/task', async (req, res) => {
     try {
-        const { name, project_id, parent_task_id, tags, Tags, subtasks } =
+        const { name, project_id, project_uid, parent_task_id, tags, Tags, subtasks } =
             req.body;
         const tagsData = tags || Tags;
 
@@ -438,7 +438,8 @@ router.post('/task', async (req, res) => {
         try {
             const validProjectId = await validateProjectAccess(
                 project_id,
-                req.currentUser.id
+                req.currentUser.id,
+                project_uid
             );
             if (validProjectId) taskAttributes.project_id = validProjectId;
         } catch (error) {
@@ -541,6 +542,7 @@ router.patch('/task/:uid', requireTaskWriteAccess, async (req, res) => {
         const {
             status,
             project_id,
+            project_uid,
             parent_task_id,
             tags,
             Tags,
@@ -643,11 +645,12 @@ router.patch('/task/:uid', requireTaskWriteAccess, async (req, res) => {
 
         await handleCompletionStatus(taskAttributes, status, task);
 
-        if (project_id !== undefined) {
+        if (project_id !== undefined || project_uid !== undefined) {
             try {
                 const validProjectId = await validateProjectAccess(
                     project_id,
-                    req.currentUser.id
+                    req.currentUser.id,
+                    project_uid
                 );
                 taskAttributes.project_id = validProjectId;
             } catch (error) {

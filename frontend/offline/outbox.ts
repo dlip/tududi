@@ -100,6 +100,18 @@ async function listEntries(): Promise<OutboxEntry[]> {
 }
 
 let flushing = false;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Re-run flush after a short delay if work remains and we're online. */
+function scheduleRetry(delayMs = 15000): void {
+    if (retryTimer !== null) {
+        return;
+    }
+    retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void flush();
+    }, delayMs);
+}
 
 /**
  * Replay queued mutations in order. Re-acquires the CSRF token first
@@ -112,6 +124,7 @@ export async function flush(): Promise<void> {
     }
     flushing = true;
 
+    let stalled = false;
     try {
         const entries = await listEntries();
         if (entries.length === 0) {
@@ -162,14 +175,22 @@ export async function flush(): Promise<void> {
                 }
 
                 // Other errors (incl. 401): stop and retry later.
+                stalled = true;
                 break;
             } catch (e) {
                 // Network error: still offline; stop and retry on next flush.
+                stalled = true;
                 break;
             }
         }
     } finally {
         flushing = false;
         await notifyPendingCount();
+        // If the queue still has entries (a replay stalled on a transient
+        // error), re-drive the flush ourselves so sync completes without
+        // requiring a manual refresh.
+        if (isOnline() && (await getPendingCount()) > 0) {
+            scheduleRetry(stalled ? 15000 : 1000);
+        }
     }
 }
