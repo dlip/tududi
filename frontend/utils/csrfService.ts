@@ -1,4 +1,5 @@
 import { getApiPath } from '../config/paths';
+import { isOnline } from '../offline/connectivity';
 
 let csrfToken: string | null = null;
 let tokenPromise: Promise<string> | null = null;
@@ -10,6 +11,13 @@ export const getCsrfToken = async (): Promise<string> => {
 
     if (tokenPromise) {
         return tokenPromise;
+    }
+
+    // No point requesting a token while offline — it would just fail with a
+    // network error. Mutations made offline are queued and re-acquire a
+    // fresh token when the outbox flushes on reconnect.
+    if (!isOnline()) {
+        throw new Error('Offline: CSRF token unavailable');
     }
 
     tokenPromise = fetch(getApiPath('csrf-token'), {

@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getApiPath } from '../../config/paths';
 import { fetchWithCsrf } from '../../utils/csrfService';
+import { isOnline } from '../../offline/connectivity';
 
 interface Notification {
     id: number;
@@ -45,6 +46,7 @@ const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     const fetchUnreadCount = async () => {
+        if (!isOnline()) return;
         try {
             const response = await fetch(
                 getApiPath('notifications/unread-count'),
